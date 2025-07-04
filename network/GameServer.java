@@ -27,11 +27,8 @@ public class GameServer {
 
             // ゲームの進行は GameSession に任せる。
             String answer = "APPLE";  // 正解ワード。とりあえずAPPLE
-            GameSession session = new GameSession(player1, player2, answer);
-            
-            session.run();
-
-            System.out.println("Session finished, shutting down server.");
+            // 非同期セッション開始
+            new GameSession(player1, player2, answer).start();
         } catch (IOException e) {
             e.printStackTrace();
         }
