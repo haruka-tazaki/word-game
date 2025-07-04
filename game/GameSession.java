@@ -1,5 +1,5 @@
 //ゲーム進行
-
+//GameSession.java
 package game;
 
 import java.io.BufferedReader;
@@ -8,9 +8,12 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+
 //非同期処理を行うスレッドを管理するため、ExecutorServiceクラスを使用する
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 public class GameSession {
     private final Socket playerA;
     private final Socket playerB;
@@ -26,9 +29,21 @@ public class GameSession {
     }
 
     public void start() {
-        //各プレイヤーごとに非同期タスクを実行
-        pool.execute(() -> handlePlayer(playerA, playerB));
-        pool.execute(() -> handlePlayer(playerB, playerA));
+        // 非同期タスクをFutureで取得
+        Future<?> taskA = pool.submit(() -> handlePlayer(playerA, playerB));
+        Future<?> taskB = pool.submit(() -> handlePlayer(playerB, playerA));
+        try {
+            // 両方のタスクが完了するまで待機
+            taskA.get();
+            taskB.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        } finally {
+            // 全タスク完了後にプールをシャットダウン
+            pool.shutdownNow();
+        }
     }
 
 
@@ -39,10 +54,13 @@ public class GameSession {
           PrintWriter    out_op = new PrintWriter(opponent.getOutputStream(), true);
         ) {
             String guess;
-            while((guess = in.readLine()) != null) {
-                if ("exit".equalsIgnoreCase(guess)){
-                    out.println("End Game");
-                    out_op.println("End Game");
+            while(true) {
+                guess = in.readLine();
+
+                // 勝敗判定
+                if (guess.equalsIgnoreCase(answer)) {
+                    out.println("YOU WIN!!   The answer was " + answer + ".");
+                    out_op.println("YOU LOSE...   The answer was " + answer + ".");
                     break;
                 }
 
@@ -50,18 +68,10 @@ public class GameSession {
                 List<Integer> position = GameLogic.findCorrectPositions(answer, guess);
                 List<Character> included = GameLogic.findIncludedLetters(answer, guess);
 
-                out.println("correct position: " + position);
-                out.println("correct letter: " + included);
-
+                out.println("correct position: " + position + "correct letter: " + included);
                 //相手に自分が送った単語を送る
-                out_op.println(guess);
+                out_op.println("[opponent] "+ guess);
 
-                // 勝敗判定
-                if (guess.equalsIgnoreCase(answer)) {
-                    out.println("YOU WIN!!\n" + "The answer was " + answer);
-                    out_op.println("YOU LOSE...\n"+ "The answer was " + answer);
-                    break;
-                }
             }
         } catch (IOException e) {
             e.printStackTrace();
