@@ -5,14 +5,27 @@ package network;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ThreadLocalRandom;
 
 import game.GameSession;
+import util.WordLoader;
 
 public class GameServer {
     private final int port;
 
+    private String[] wordList;
+
     public GameServer(int port) {
         this.port = port;
+
+        try {
+            // 単語ファイルを読み込む（ファイル名は適宜変更）
+            wordList = WordLoader.loadWords("wordles.txt");
+        } catch (IOException e) {
+            System.err.println("単語リストの読み込みに失敗しました。");
+            e.printStackTrace();
+            wordList = new String[] { "APPLE" }; // 失敗したらapple
+        }
     }
 
     public void start() {
@@ -26,7 +39,11 @@ public class GameServer {
             System.out.println("Player 2 connected: " + player2.getRemoteSocketAddress());
 
             // ゲームの進行は GameSession に任せる。
-            String answer = "APPLE";  // 正解ワード。とりあえずAPPLE
+
+            // ランダム単語を選択
+            String answer = getRandomWord();
+            System.out.println("Answer word selected: " + answer);//デバッグ用、適宜削除
+
             GameSession session = new GameSession(player1, player2, answer);
             
             session.run();
@@ -35,6 +52,12 @@ public class GameServer {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    //配列内ランダム取り出し
+    private String getRandomWord() {
+        int index = ThreadLocalRandom.current().nextInt(wordList.length);
+        return wordList[index];
     }
 
     public static void main(String[] args) {
