@@ -1,3 +1,4 @@
+//GameLogic.java
 //ヒント作成など
 
 package game;
