@@ -1,3 +1,4 @@
+//Gameserver.java
 //実行時は java GameServer <ポート番号> を入力
 
 package network;
@@ -24,7 +25,7 @@ public class GameServer {
         } catch (IOException e) {
             System.err.println("単語リストの読み込みに失敗しました。");
             e.printStackTrace();
-            wordList = new String[] { "APPLE" }; // 失敗したらapple
+            wordList = new String[] { "apple" }; // 失敗したらapple
         }
     }
 
@@ -37,16 +38,13 @@ public class GameServer {
             System.out.println("Waiting for Player 2...");
             Socket player2 = serverSocket.accept();
             System.out.println("Player 2 connected: " + player2.getRemoteSocketAddress());
-
-            // ゲームの進行は GameSession に任せる。
-
-            // ランダム単語を選択
+            
             String answer = getRandomWord();
             System.out.println("Answer word selected: " + answer);//デバッグ用、適宜削除
-
-            GameSession session = new GameSession(player1, player2, answer);
             
-            session.run();
+            // ゲームの進行は GameSession に任せる。
+            // 非同期セッション開始
+            new GameSession(player1, player2, answer).start();
 
             System.out.println("Session finished, shutting down server.");
         } catch (IOException e) {
