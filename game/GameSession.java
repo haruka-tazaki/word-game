@@ -1,5 +1,5 @@
 //ゲーム進行
-
+//GameSession.java
 package game;
 
 import java.io.BufferedReader;
@@ -8,11 +8,18 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
+//非同期処理を行うスレッドを管理するため、ExecutorServiceクラスを使用する
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 public class GameSession {
     private final Socket playerA;
     private final Socket playerB;
     private final String answer;
+    //２つのスレッド
+    private final ExecutorService pool = Executors.newFixedThreadPool(2);
 
     //コンストラクタ
     public GameSession(Socket playerA, Socket playerB, String answer) {
@@ -21,54 +28,57 @@ public class GameSession {
         this.answer  = answer;
     }
 
-    public void run() {
-        try (
-          BufferedReader inA  = new BufferedReader(new InputStreamReader(playerA.getInputStream()));
-          PrintWriter    outA = new PrintWriter(playerA.getOutputStream(), true);
-          BufferedReader inB  = new BufferedReader(new InputStreamReader(playerB.getInputStream()));
-          PrintWriter    outB = new PrintWriter(playerB.getOutputStream(), true);
-        ) {
-            while (true) {//同期している(AとBはお互いに回答しないと次を打てない)
-                // プレイヤーAのターン
-                String guessA = inA.readLine();
-                if (guessA == null || "exit".equalsIgnoreCase(guessA)) {
-                    // セッション終了コマンド
-                    outA.println("EXIT GAME");
-                    outB.println("EXIT GAME");
-                    break;
-                }
-                if (guessA.equalsIgnoreCase(answer)) {
-                    outA.println("YOU_WIN");
-                    outB.println("YOU_LOSE");
-                    break;
-                }
-                List<Integer> posA = GameLogic.findCorrectPositions(answer, guessA);
-                List<Character> charA = GameLogic.findIncludedLetters(answer, guessA);
-                outA.println("correct position:" + posA + "correct letter:" + charA);
+    public void start() {
+        // 非同期タスクをFutureで取得
+        Future<?> taskA = pool.submit(() -> handlePlayer(playerA, playerB));
+        Future<?> taskB = pool.submit(() -> handlePlayer(playerB, playerA));
+        try {
+            // 両方のタスクが完了するまで待機
+            taskA.get();
+            taskB.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        } finally {
+            // 全タスク完了後にプールをシャットダウン
+            pool.shutdownNow();
+        }
+    }
 
-                // プレイヤーBのターン
-                String guessB = inB.readLine();
-                if (guessB == null || "exit".equalsIgnoreCase(guessB)) {
-                    // セッション終了コマンド
-                    outA.println("EXIT GAME");
-                    outB.println("EXIT GAME");
+
+    public void handlePlayer(Socket self, Socket opponent) {
+        try (
+          BufferedReader in  = new BufferedReader(new InputStreamReader(self.getInputStream()));
+          PrintWriter    out = new PrintWriter(self.getOutputStream(), true);
+          PrintWriter    out_op = new PrintWriter(opponent.getOutputStream(), true);
+        ) {
+            String guess;
+            while(true) {
+                guess = in.readLine();
+
+                // 勝敗判定
+                if (guess.equalsIgnoreCase(answer)) {
+                    out.println("YOU WIN!!   The answer was " + answer + ".");
+                    out_op.println("YOU LOSE...   The answer was " + answer + ".");
                     break;
                 }
-                if (guessB.equalsIgnoreCase(answer)) {
-                    outB.println("YOU_WIN");
-                    outA.println("YOU_LOSE");
-                    break;
-                }
-                List<Integer> posB = GameLogic.findCorrectPositions(answer, guessB);
-                List<Character> charB = GameLogic.findIncludedLetters(answer, guessB);
-                outB.println("correct position:" + posB + "correct letter:" + charB);
+
+                //ヒント返却
+                List<Integer> position = GameLogic.findCorrectPositions(answer, guess);
+                List<Character> included = GameLogic.findIncludedLetters(answer, guess);
+
+                out.println("correct position: " + position + "correct letter: " + included);
+                //相手に自分が送った単語とそのヒントを送る
+                out_op.println("[opponent] "+ guess+"  correct position: " + position + "correct letter: " + included);
+
             }
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
-            // セッション終了時にソケットを閉じる
+            pool.shutdownNow();
             try { playerA.close(); } catch (IOException ignored) {}
             try { playerB.close(); } catch (IOException ignored) {}
-        }
+        }   
     }
 }
