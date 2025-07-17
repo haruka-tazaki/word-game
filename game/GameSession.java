@@ -1,5 +1,3 @@
-//ゲーム進行
-//GameSession.java
 package game;
 
 import java.io.BufferedReader;
@@ -9,19 +7,21 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-
-//非同期処理を行うスレッドを管理するため、ExecutorServiceクラスを使用する
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+
+/**
+ * GameSession manages a two-player Wordle game session.
+ * Ensures that on a correct guess, only one hint (full correct) is sent,
+ * preventing duplicate display for the winner.
+ */
 public class GameSession {
     private final Socket playerA;
     private final Socket playerB;
     private final String answer;
-    //２つのスレッド
     private final ExecutorService pool = Executors.newFixedThreadPool(2);
 
-    //コンストラクタ
     public GameSession(Socket playerA, Socket playerB, String answer) {
         this.playerA = playerA;
         this.playerB = playerB;
@@ -29,11 +29,9 @@ public class GameSession {
     }
 
     public void start() {
-        // 非同期タスクをFutureで取得
         Future<?> taskA = pool.submit(() -> handlePlayer(playerA, playerB));
         Future<?> taskB = pool.submit(() -> handlePlayer(playerB, playerA));
         try {
-            // 両方のタスクが完了するまで待機
             taskA.get();
             taskB.get();
         } catch (InterruptedException e) {
@@ -41,37 +39,40 @@ public class GameSession {
         } catch (ExecutionException e) {
             e.printStackTrace();
         } finally {
-            // 全タスク完了後にプールをシャットダウン
             pool.shutdownNow();
         }
     }
 
-
-    public void handlePlayer(Socket self, Socket opponent) {
+    private void handlePlayer(Socket self, Socket opponent) {
         try (
-          BufferedReader in  = new BufferedReader(new InputStreamReader(self.getInputStream()));
-          PrintWriter    out = new PrintWriter(self.getOutputStream(), true);
-          PrintWriter    out_op = new PrintWriter(opponent.getOutputStream(), true);
+            BufferedReader in     = new BufferedReader(new InputStreamReader(self.getInputStream()));
+            PrintWriter    out    = new PrintWriter(self.getOutputStream(), true);
+            PrintWriter    outOpp = new PrintWriter(opponent.getOutputStream(), true)
         ) {
             String guess;
-            while(true) {
-                guess = in.readLine();
-
-                // 勝敗判定
+            while ((guess = in.readLine()) != null) {
+                // 1) Win check first: avoid sending normal hint on correct guess
                 if (guess.equalsIgnoreCase(answer)) {
+                    // Send single full-correct hint
+                    List<Integer> full = List.of(0,1,2,3,4);
+                    out.println("correct position: " + full + " correct letter: []");
+                    outOpp.println("[opponent] " + guess
+                                  + "  correct position: " + full
+                                  + " correct letter: []");
+                    // Then send win/lose
                     out.println("YOU WIN!!   The answer was " + answer + ".");
-                    out_op.println("YOU LOSE...   The answer was " + answer + ".");
+                    outOpp.println("YOU LOSE...   The answer was " + answer + ".");
                     break;
                 }
 
-                //ヒント返却
-                List<Integer> position = GameLogic.findCorrectPositions(answer, guess);
+                // 2) Normal hint processing for incorrect guesses
+                List<Integer> positions = GameLogic.findCorrectPositions(answer, guess);
                 List<Character> included = GameLogic.findIncludedLetters(answer, guess);
 
-                out.println("correct position: " + position + "correct letter: " + included);
-                //相手に自分が送った単語とそのヒントを送る
-                out_op.println("[opponent] "+ guess+"  correct position: " + position + "correct letter: " + included);
-
+                out.println("correct position: " + positions + " correct letter: " + included);
+                outOpp.println("[opponent] " + guess
+                              + "  correct position: " + positions
+                              + " correct letter: " + included);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -79,6 +80,6 @@ public class GameSession {
             pool.shutdownNow();
             try { playerA.close(); } catch (IOException ignored) {}
             try { playerB.close(); } catch (IOException ignored) {}
-        }   
+        }
     }
 }
